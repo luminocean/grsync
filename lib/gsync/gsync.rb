@@ -1,4 +1,5 @@
 require 'open3'
+require 'shellwords'
 
 module GSync
     class Syncer
@@ -13,22 +14,46 @@ module GSync
 
         # sync remote git repository with the local one
         def sync
-            check_remote_valid
+            # preparation
+            check_remote_path_valid
             check_git_repo
 
-            output = @ssh.exec! 'hostname'
-            puts output
+            diff_text = local_diff
+            # puts diff_text
+
+            apply_diff_to_remote diff_text
+
+            # output = @ssh.exec! 'hostname'
+            # puts output
         end
 
         private
+
+        # TODO: make sure this is called after remote is cleaned
+        def apply_diff_to_remote(diff_text)
+            # be careful, string in ruby may not be used safely in shell directly
+            # so here's a conversion
+            echoable_text = Shellwords.escape diff_text
+
+            result = @ssh.exec! "cd #{@remote_path} && echo #{echoable_text} | git apply -"
+            # diff fails if something other than empty string returns
+            raise DiffApplyException, "apply failed: #{result}" if result != ''
+        end
+
+        # diff the local git repository and returns the diff text for later use
+        def local_diff
+            `cd #{@local_path} && git diff`
+        end
 
         # check whether both local and remote directory are git repositories
         # otherwise actions follow will definitely fail
         def check_git_repo
             # check local dir
-            old_wd = `pwd`
+
+            # use Open3 in order to get stderr output from child process
+            # `` only returns stdout output which is not enough
+            # since command are all executed in newly spawned child processes so there's no need to record old dir path
             stdout, stderr = Open3.popen3("cd #{@local_path} && git status")[1..2]
-            `cd #{old_wd}` # go back first
 
             unless /^On branch/ =~ stdout.gets and stderr.gets.nil?
                 raise NotGitRepoException, "local path #{@local_path} is not a git repository"
@@ -36,7 +61,7 @@ module GSync
 
             # check remote dir
             valid = true
-            @ssh.exec!("old_wd=$(pwd);cd #{@remote_path};git status;cd $old_wd") do |ch, stream, data|
+            @ssh.exec!("cd #{@remote_path} && git status") do |ch, stream, data|
                 case stream
                     when :stdout
                         valid = false unless data =~ /^On branch/
@@ -50,7 +75,7 @@ module GSync
         end
 
         # check whether the remote path is valid
-        def check_remote_valid
+        def check_remote_path_valid
             @ssh.exec!("ls #{@remote_path}") do |ch, stream, data|
                 if stream == :stderr and not data.nil?
                     raise RemotePathInvalidException, "remote path #{@remote_path} not found"
@@ -61,4 +86,5 @@ module GSync
 
     class RemotePathInvalidException < Exception; end
     class NotGitRepoException < Exception; end
+    class DiffApplyException < Exception; end
 end
