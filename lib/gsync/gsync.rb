@@ -53,32 +53,41 @@ module GSync
             `cd #{@local_path} && git diff HEAD`
         end
 
-        # check whether both local and remote directory are git repositories
-        # otherwise actions follow will definitely fail
+        # check the followings:
+        # 1. whether both local and remote directory are git repositories
+        # 2. whether their branches are matched
         def check_git_repo
             # check local dir
 
             # use Open3 in order to get stderr output from child process
-            # `` only returns stdout output which is not enough
+            # `` syntax only returns stdout output which is not enough
+
             # since command are all executed in newly spawned child processes so there's no need to record old dir path
             stdout, stderr = Open3.popen3("cd #{@local_path} && git status")[1..2]
 
-            unless /^On branch/ =~ stdout.gets and stderr.gets.nil?
-                raise NotGitRepoException, "local path #{@local_path} is not a git repository"
+            local_branch_name = stdout.gets.to_s.match(/^On branch ([^\s]+)/)[1]
+            unless local_branch_name
+                raise GitRepoException, "local path #{@local_path} is not a git repository"
             end
 
             # check remote dir
             valid = true
+            remote_branch_name = ''
             @ssh.exec!("cd #{@remote_path} && git status") do |ch, stream, data|
                 case stream
                     when :stdout
-                        valid = false unless data =~ /^On branch/
+                        valid = false unless (remote_branch_name = data.match(/^On branch ([^\s]+)/)[1])
                     when :stderr
                         valid = false unless (data.nil? or data == '')
                 end
             end
             unless valid
-                raise NotGitRepoException, "remote path #{@remote_path} is not a git repository"
+                raise GitRepoException, "remote path #{@remote_path} is not a git repository"
+            end
+
+            # check match
+            if local_branch_name != remote_branch_name
+                raise GitRepoException, "local branch(#{local_branch_name}) and remote branch(#{remote_branch_name}) don't match"
             end
         end
 
@@ -93,7 +102,7 @@ module GSync
     end
 
     class RemotePathInvalidException < Exception; end
-    class NotGitRepoException < Exception; end
+    class GitRepoException < Exception; end
     class GitDiffApplyException < Exception; end
     class GitResetException < Exception; end
 end
