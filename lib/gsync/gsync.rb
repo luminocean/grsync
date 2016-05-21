@@ -17,10 +17,9 @@ module GSync
             # preparation
             check_remote_path_valid
             check_git_repo
+            reset_remote_repo
 
             diff_text = local_diff
-            # puts diff_text
-
             apply_diff_to_remote diff_text
 
             # output = @ssh.exec! 'hostname'
@@ -29,7 +28,16 @@ module GSync
 
         private
 
-        # TODO: make sure this is called after remote is cleaned
+        # checkout all files from HEAD to flush all changes made in remote repo
+        # thus new git apply can be applied safely :)
+        def reset_remote_repo
+            @ssh.exec! "cd #{@remote_path} && git reset --hard" do |ch, stream, data|
+                if stream == :stderr and data.to_s != '' # check for nil or ''
+                    raise GitResetException, "reset failed: #{data}"
+                end
+            end
+        end
+
         def apply_diff_to_remote(diff_text)
             # be careful, string in ruby may not be used safely in shell directly
             # so here's a conversion
@@ -37,12 +45,12 @@ module GSync
 
             result = @ssh.exec! "cd #{@remote_path} && echo #{echoable_text} | git apply -"
             # diff fails if something other than empty string returns
-            raise DiffApplyException, "apply failed: #{result}" if result != ''
+            raise GitDiffApplyException, "apply failed: #{result}" if result != ''
         end
 
         # diff the local git repository and returns the diff text for later use
         def local_diff
-            `cd #{@local_path} && git diff`
+            `cd #{@local_path} && git diff HEAD`
         end
 
         # check whether both local and remote directory are git repositories
@@ -86,5 +94,6 @@ module GSync
 
     class RemotePathInvalidException < Exception; end
     class NotGitRepoException < Exception; end
-    class DiffApplyException < Exception; end
+    class GitDiffApplyException < Exception; end
+    class GitResetException < Exception; end
 end
