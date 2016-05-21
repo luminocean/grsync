@@ -1,9 +1,10 @@
+require 'open3'
+
 module GSync
     class Syncer
-        # Syncer initializer
         # * +ssh+ - ssh object used for issuing commands
-        # * +local_path+ - source of the sync link which should be a directory path on local machine
-        # * +remote_path+ - destination of the sync link which should be a directory path on remote machine
+        # * +local_path+ - source of the sync link which should be a path of a directory on local machine
+        # * +remote_path+ - destination of the sync link which should be a path of a directory on remote machine
         def initialize(ssh, local_path, remote_path)
             @ssh = ssh
             @local_path = local_path # existence should be checked before
@@ -12,37 +13,48 @@ module GSync
 
         # sync remote git repository with the local one
         def sync
-            cd_remote_path
+            check_remote_valid
             check_git_repo
 
-            output = exec("hostname")
+            output = @ssh.exec! 'hostname'
             puts output
         end
 
         private
 
-        # shortcut for @ssh.exec!
-        def exec(command)
-            @ssh.exec! command
-        end
-
         # check whether both local and remote directory are git repositories
         # otherwise actions follow will definitely fail
         def check_git_repo
             # check local dir
-            cwd = `pwd`
-            test_result = `cd #{@local_path} && git status`
-            # TODO: regex validation
+            old_wd = `pwd`
+            stdout, stderr = Open3.popen3("cd #{@local_path} && git status")[1..2]
+            `cd #{old_wd}` # go back first
+
+            unless /^On branch/ =~ stdout.gets and stderr.gets.nil?
+                raise NotGitRepoException, "local path #{@local_path} is not a git repository"
+            end
+
+            # check remote dir
+            valid = true
+            @ssh.exec!("old_wd=$(pwd);cd #{@remote_path};git status;cd $old_wd") do |ch, stream, data|
+                case stream
+                    when :stdout
+                        valid = false unless data =~ /^On branch/
+                    when :stderr
+                        valid = false unless (data.nil? or data == '')
+                end
+            end
+            unless valid
+                raise NotGitRepoException, "remote path #{@remote_path} is not a git repository"
+            end
         end
 
-        # cd into the remote path
-        # return true the remote path is valid otherwise false
-        def cd_remote_path
-            test_result = exec("cd #{@remote_path}")
-            # succeeded cd should return empty string
-            # failed cd result would looks something like: [bash: line 0: cd: /ppo: No such file or directory]
-            if test_result != ''
-                raise RemotePathInvalidException, "remote path #{@remote_path} invalid"
+        # check whether the remote path is valid
+        def check_remote_valid
+            @ssh.exec!("ls #{@remote_path}") do |ch, stream, data|
+                if stream == :stderr and not data.nil?
+                    raise RemotePathInvalidException, "remote path #{@remote_path} not found"
+                end
             end
         end
     end

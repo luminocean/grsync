@@ -9,8 +9,8 @@ require_relative 'gsync/gsync'
 
 # a sample command of gsync is like:
 # ./gsync
-#   --source ~/document/myrepo
-#   --destination username@localhost:/home/username/myrepo
+#   --local ~/document/myrepo
+#   --remote username@localhost:/home/username/myrepo
 #   --passwd barabara
 #   --port 2222
 
@@ -19,30 +19,30 @@ module GSync
     if __FILE__ == $0
         # parse arguments
         opts = Trollop::options do
-            opt :src, 'source git repository', :type => :string
-            opt :dest, 'synchronization destination', :type => :string
+            opt :local, 'local source git repository(e.g. /path/to/repo)', :type => :string
+            opt :remote, 'remote destination git repository(e.g. username@host:/path/to/repo)', :type => :string
             opt :passwd, 'password for ssh login', :type => :string
             opt :port, 'port for ssh login', :default => 22
             opt :save, 'save this synchronization link'
         end
 
-        src = opts[:src]
-        dest_full = opts[:dest] # location with username, host and path
+        local = opts[:local]
+        remote_full = opts[:remote] # location with username, host and path
 
         # since save feature is unimplemented
-        # both src and dest option have to be specified for an explicit link
-        Trollop::die :src, 'must be specified' if src.nil?
-        Trollop::die :dest, 'must be specified' if dest_full.nil?
+        # both local and remote option have to be specified for an explicit synchronization
+        Trollop::die :local, 'must be specified' if local.nil?
+        Trollop::die :remote, 'must be specified' if remote_full.nil?
 
-        # src dir must exist
+        # local dir must exist
         # always check existence asap
-        unless Dir.exist?(src)
-            $Log.error "Source directory #{src} doesn't exist"
+        unless Dir.exist?(File.expand_path(local))
+            $Log.error "Local directory #{local} doesn't exist"
             abort
         end
 
-        # extract dest, user_name and host from dest_full
-        login_str, dest = dest_full.split ':'
+        # extract remote, user_name and host from dest_full
+        login_str, remote = remote_full.split ':'
         if login_str.split('@').size == 2
             user_name, host = login_str.split('@')
         else
@@ -57,11 +57,12 @@ module GSync
         # ssh login
         begin
             Net::SSH.start(host, user_name, :password => passwd, :port => port) do |ssh|
-                syncer = GSync::Syncer.new ssh, src, dest
+                syncer = GSync::Syncer.new ssh, local, remote
                 syncer.sync
             end
         rescue Net::SSH::AuthenticationFailed
             login_info = {
+                host: host,
                 user_name: user_name,
                 port: port,
                 passwd: passwd
@@ -69,7 +70,7 @@ module GSync
             $Log.error "Authentication failed. Please check whether the following login information is correct: #{login_info}"
             abort
         rescue Exception => ex
-            $Log.error "#{ex}"
+            $Log.error "#{ex.class.name} -- #{ex}"
             abort
         end
     end
