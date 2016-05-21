@@ -4,17 +4,17 @@ require 'bundler/setup'
 require 'net/ssh'
 require 'trollop'
 
-require 'gsync'
-require 'gsync/logger'
+require 'grsync'
+require 'grsync/logger'
 
-# a sample command of gsync is like:
-# ./gsync
+# a sample command of grsync is like:
+# ./grsync
 #   --local ~/document/myrepo
 #   --remote username@localhost:/home/username/myrepo
 #   --passwd barabara
 #   --port 2222
 
-module GSync
+module GRSync
     # execution entrance
     if __FILE__ == $0
         # parse arguments
@@ -57,7 +57,7 @@ module GSync
         # ssh login
         begin
             Net::SSH.start(host, user_name, :password => passwd, :port => port) do |ssh|
-                syncer = GSync::Syncer.new ssh, local, remote
+                syncer = GRSync::Syncer.new ssh, local, remote
                 syncer.sync
             end
         rescue Net::SSH::AuthenticationFailed

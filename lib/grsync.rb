@@ -1,7 +1,7 @@
 require 'open3'
 require 'shellwords'
 
-module GSync
+module GRSync
     class Syncer
         # * +ssh+ - ssh object used for issuing commands
         # * +local_path+ - source of the sync link which should be a path of a directory on local machine
