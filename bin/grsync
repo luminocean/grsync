@@ -3,6 +3,7 @@
 require 'bundler/setup'
 require 'net/ssh'
 require 'trollop'
+require 'json'
 
 require 'grsync'
 require 'grsync/logger'
@@ -14,6 +15,10 @@ require 'grsync/logger'
 #   --passwd barabara
 #   --port 2222
 
+module GRSync
+    RecordFilePath = '~/.grsync'
+end
+
 # parse arguments
 opts = Trollop::options do
     opt :local, 'local source git repository(e.g. /path/to/repo)', :type => :string
@@ -23,13 +28,64 @@ opts = Trollop::options do
     opt :save, 'save this synchronization link'
 end
 
-local = opts[:local]
-remote_full = opts[:remote] # location with username, host and path
+# if neither local repo or remote repo are given
+# read arguments from the record file
+if opts[:local].nil? and opts[:remote].nil?
+    record_file_path = File.expand_path(GRSync::RecordFilePath)
+    unless File.exist? record_file_path
+        $Log.info 'Run without --local and --remote arguments. ' <<
+                      "Tried to read the record file #{record_file_path} but it's not found."
+        Trollop::die :local, 'must be specified when record file is unavailable'
+    end
 
-# since save feature is unimplemented
-# both local and remote option have to be specified for an explicit synchronization
-Trollop::die :local, 'must be specified' if local.nil?
-Trollop::die :remote, 'must be specified' if remote_full.nil?
+    # read meta data from record file
+    record = JSON.parse(File.read(record_file_path))
+    local = record['local']
+    user_name = record['user_name']
+    host = record['host']
+    remote = record['remote']
+    passwd = record['passwd']
+    port = record['port']
+
+# read arguments from command line
+else
+    local = opts[:local]
+    remote_full = opts[:remote] # location with username, host and path
+
+    Trollop::die :local, 'must be specified' if local.nil?
+    Trollop::die :remote, 'must be specified' if remote_full.nil?
+
+    # extract remote, user_name and host from dest_full
+    login_str, remote = remote_full.split ':'
+    if login_str.split('@').size == 2
+        user_name, host = login_str.split('@')
+    else
+        user_name = nil
+        host = login_str
+    end
+
+    # optional options for login
+    passwd = opts[:passwd] || ''
+    port = opts[:port]
+
+    # save sync meta data into record file if -save flag specified
+    if opts[:save]
+        # collect meta data
+        meta = {
+            :local => local,
+            :user_name => user_name,
+            :host => host,
+            :remote => remote,
+            :passwd => passwd,
+            :port => port
+        }
+
+        # write meta into record file
+        File.open(File.expand_path(GRSync::RecordFilePath), mode='w') do |file|
+            file.write JSON.dump(meta)
+        end
+    end
+end
 
 # local dir must exist
 # always check existence asap
@@ -37,19 +93,6 @@ unless Dir.exist?(File.expand_path(local))
     $Log.error "Local directory #{local} doesn't exist"
     abort
 end
-
-# extract remote, user_name and host from dest_full
-login_str, remote = remote_full.split ':'
-if login_str.split('@').size == 2
-    user_name, host = login_str.split('@')
-else
-    host = login_str
-    user_name = nil
-end
-
-# optional options for login
-passwd = opts[:passwd] || ''
-port = opts[:port]
 
 # ssh login
 begin

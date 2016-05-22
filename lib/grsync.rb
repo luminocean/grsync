@@ -33,19 +33,24 @@ module GRSync
         def reset_remote_repo
             @ssh.exec! "cd #{@remote_path} && git reset --hard" do |ch, stream, data|
                 if stream == :stderr and data.to_s != '' # check for nil or ''
-                    raise GitResetException, "reset failed: #{data}"
+                    raise GitResetException, "Reset failed: #{data}"
                 end
             end
         end
 
         def apply_diff_to_remote(diff_text)
+            # remove trailing spaces from diff text
+            # very important because trailing spaces would cause git apply failure
+            no_trailing_diff_text = []
+            diff_text.split("\n").each{|line| no_trailing_diff_text << line.rstrip }
+
             # be careful, string in ruby may not be used safely in shell directly
             # so here's a conversion
-            echoable_text = Shellwords.escape diff_text
+            echoable_text = Shellwords.escape no_trailing_diff_text.join("\n")
 
-            result = @ssh.exec! "cd #{@remote_path} && echo #{echoable_text} | git apply -"
+            result = @ssh.exec! "cd #{@remote_path} && (echo #{echoable_text} | git apply -)"
             # diff fails if something other than empty string returns
-            raise GitDiffApplyException, "apply failed: #{result}" if result != ''
+            raise GitDiffApplyException, "Apply failed: #{result}" if result != ''
         end
 
         # diff the local git repository and returns the diff text for later use
