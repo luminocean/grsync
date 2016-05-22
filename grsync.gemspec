@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
     spec.authors       = ['luminocean']
     spec.email         = ['luminocean@foxmail.com']
 
-    spec.summary       = 'development code synchronization tool'
+    spec.summary       = 'A tool to synchronize local and remote git repositories\' code'
     spec.files         = `git ls-files`.split("\n")
     spec.bindir        = 'bin'
     spec.executables   = ['grsync']
