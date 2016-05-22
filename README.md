@@ -23,7 +23,7 @@ Options:
                       username@host:/path/to/repo)
   -p, --passwd=<s>    password for ssh login
   -o, --port=<i>      port for ssh login (default: 22)
-  -s, --save          save this synchronization link(not implemented yet)
+  -s, --save          save this synchronization link
   -h, --help          Show this message
 ```
 
